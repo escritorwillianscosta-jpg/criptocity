@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cripto City - Metaverse Game</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root {
+            --primary: #ffd700;
+            --bg-dark: #0f172a;
+            --card-bg: #1e293b;
+            --text: #f8fafc;
+            --success: #22c55e;
+            --danger: #ef4444;
+            --info: #3b82f6;
+            --farm: #10b981;
+            --crop: #f59e0b;
+        }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text);
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+        header {
+            background-color: var(--card-bg);
+            padding: 1rem;
+            display: flex;
+            justify-content: space-around;
+            border-bottom: 2px solid var(--primary);
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .coin-balance { display: flex; align-items: center; gap: 5px; font-weight: bold; }
+        .coin-balance i { color: var(--primary); }
+        #game-container { flex: 1; padding: 1rem; display: flex; flex-direction: column; align-items: center; overflow-y: auto; }
+        h1 { margin: 10px 0; color: var(--primary); text-transform: uppercase; letter-spacing: 2px; }
+        .map-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; width: 100%; max-width: 450px; background: rgba(255,255,255,0.05); padding: 15px; border-radius: 10px; }
+        .plot { 
+            aspect-ratio: 1; 
+            background-color: #334155; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            display: flex; 
+            flex-direction: column;
+            align-items: center; 
+            justify-content: center; 
+            font-size: 0.5rem; 
+            transition: all 0.3s; 
+            border: 2px solid transparent;
+            position: relative;
+            text-align: center;
+        }
+        .plot:hover { transform: translateY(-5px); border-color: var(--primary); }
+        .plot.owned { background-color: var(--info); border-color: #2563eb; }
+        .plot.has-house { background-color: #1e3a8a; }
+        .plot.has-cow { background-color: #065f46; border-color: var(--farm); }
+        .plot.has-crop { border-color: var(--crop); }
+        .plot.crop-ready { background-color: #78350f; animation: pulse 1.5s infinite; }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        .plot i { font-size: 1rem; margin-bottom: 2px; }
+        
+        .status-bar { width: 100%; max-width: 450px; margin: 10px 0; font-size: 0.8rem; display: flex; justify-content: space-between; color: #94a3b8; }
+
+        .btn-work { width: 100%; max-width: 450px; background: linear-gradient(45deg, #ffd700, #ffa500); color: #000; border: none; padding: 15px; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 10px; display: flex; align-items: center; justify-content: center; gap: 10px; transition: 0.3s; }
+
+        #modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--card-bg); padding: 25px; border: 2px solid var(--primary); border-radius: 15px; z-index: 100; text-align: center; box-shadow: 0 0 30px rgba(0,0,0,0.5); width: 280px; }
+        .modal-btns { display: flex; flex-direction: column; gap: 10px; margin-top: 15px; }
+        .btn-action { border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; color: white; width: 100%; }
+    </style>
+</head>
+<body>
+<header>
+    <div class="coin-balance"><i class="fa-solid fa-coins"></i> <span id="city-coins">0</span> CC</div>
+    <div class="coin-balance"><i class="fa-solid fa-house-lock"></i> <span id="rent-val">0</span>/min</div>
+</header>
+<div id="game-container">
+    <h1>Cripto City</h1>
+    <div class="status-bar">
+        <span><i class="fa-solid fa-map-location-dot"></i> Bairro: Genesis</span>
+        <span id="owned-count">Terrenos: 0</span>
+    </div>
+    <div class="map-grid" id="map"></div>
+    <button class="btn-work" onclick="work()">
+        <i class="fa-solid fa-hammer"></i> TRABALHAR (VER ANÚNCIO)
+    </button>
+</div>
+
+<div id="modal">
+    <h3 id="modal-title">Lote</h3>
+    <p id="modal-desc">O que deseja fazer?</p>
+    <div class="modal-btns" id="modal-actions">
+        <!-- Dinâmico -->
+    </div>
+    <button onclick="closeModal()" style="background: none; color: #94a3b8; border: none; margin-top: 15px; cursor: pointer;">CANCELAR</button>
+</div>
+
+<script>
+    let coins = 0;
+    let rentPerMinute = 0;
+    let ownedPlots = 0;
+    const map = document.getElementById('map');
+    const modal = document.getElementById('modal');
+    const modalActions = document.getElementById('modal-actions');
+    let plotsData = {};
+
+    for(let i=1; i<=25; i++) {
+        plotsData[i] = { 
+            owned: false, 
+            hasHouse: false, 
+            hasCow: false,
+            cropStatus: 'none', 
+            price: 500, 
+            housePrice: 1500,
+            cowPrice: 800,
+            seedPrice: 300,
+            harvestValue: 800
+        };
+        let plot = document.createElement('div');
+        plot.className = 'plot';
+        plot.id = 'plot-' + i;
+        plot.innerHTML = `<i class="fa-solid fa-tree"></i><span>Lote ${i}</span>`;
+        plot.onclick = () => showPlotInfo(i);
+        map.appendChild(plot);
+    }
+
+    setInterval(() => {
+        if(rentPerMinute > 0) {
+            coins += rentPerMinute / 60;
+            document.getElementById('city-coins').innerText = Math.floor(coins);
+        }
+    }, 1000);
+
+    function work() {
+        // Espaço para seu Direct Link do Adsterra
+        coins += 100;
+        document.getElementById('city-coins').innerText = Math.floor(coins);
+        alert("Ótimo trabalho! Você recebeu 100 City Coins.");
+    }
+
+    function showPlotInfo(id) {
+        const data = plotsData[id];
+        modal.style.display = 'block';
+        document.getElementById('modal-title').innerText = "Terreno #" + id;
+        
+        let html = '';
+        if(!data.owned) {
+            html = `<button onclick="buyPlot(${id})" class="btn-action" style="background: var(--success)">COMPRAR TERRENO (500 CC)</button>`;
+        } else {
+            if(!data.hasHouse) {
+                html += `<button onclick="buildHouse(${id})" class="btn-action" style="background: var(--info)">CONSTRUIR CASA (1500 CC)</button>`;
+            }
+            if(!data.hasCow) {
+                html += `<button onclick="buyCow(${id})" class="btn-action" style="background: var(--farm)">COMPRAR GADO (800 CC)</button>`;
+            }
+            if(data.cropStatus === 'none') {
+                html += `<button onclick="plantCrop(${id})" class="btn-action" style="background: var(--crop)">PLANTAR HORTA (300 CC)</button>`;
+            } else if(data.cropStatus === 'ready') {
+                html += `<button onclick="harvestCrop(${id})" class="btn-action" style="background: #78350f">COLHER E VENDER (800 CC)</button>`;
+            }
+        }
+        modalActions.innerHTML = html;
+    }
+
+    function closeModal() { modal.style.display = 'none'; }
+
+    function buyPlot(id) {
+        if(coins >= plotsData[id].price) {
+            coins -= plotsData[id].price;
+            plotsData[id].owned = true;
+            ownedPlots++;
+            updateUI(id);
+            closeModal();
+        } else { alert("Saldo insuficiente!"); }
+    }
+
+    function buyCow(id) {
+        if(coins >= plotsData[id].cowPrice) {
+            coins -= plotsData[id].cowPrice;
+            plotsData[id].hasCow = true;
+            rentPerMinute += 5;
+            updateUI(id);
+            closeModal();
+        } else { alert("Saldo insuficiente!"); }
+    }
+
+    function buildHouse(id) {
+        if(coins >= plotsData[id].housePrice) {
+            coins -= plotsData[id].housePrice;
+            plotsData[id].hasHouse = true;
+            rentPerMinute += 10;
+            updateUI(id);
+            closeModal();
+        } else { alert("Saldo insuficiente!"); }
+    }
+
+    function plantCrop(id) {
+        if(coins >= plotsData[id].seedPrice) {
+            coins -= plotsData[id].seedPrice;
+            plotsData[id].cropStatus = 'growing';
+            updateUI(id);
+            closeModal();
+            setTimeout(() => {
+                plotsData[id].cropStatus = 'ready';
+                updateUI(id);
+            }, 20000);
+        } else { alert("Saldo insuficiente!"); }
+    }
+
+    function harvestCrop(id) {
+        coins += plotsData[id].harvestValue;
+        plotsData[id].cropStatus = 'none';
+        updateUI(id);
+        closeModal();
+    }
+
+    function updateUI(id) {
+        document.getElementById('city-coins').innerText = Math.floor(coins);
+        document.getElementById('rent-val').innerText = rentPerMinute;
+        document.getElementById('owned-count').innerText = "Terrenos: " + ownedPlots;
+        
+        const plotEl = document.getElementById('plot-' + id);
+        let icons = '';
+        if(plotsData[id].hasHouse) icons += `<i class="fa-solid fa-house-chimney"></i>`;
+        if(plotsData[id].hasCow) icons += `<i class="fa-solid fa-cow"></i>`;
+        if(plotsData[id].cropStatus === 'growing') icons += `<i class="fa-solid fa-seedling" style="color: var(--crop)"></i>`;
+        if(plotsData[id].cropStatus === 'ready') icons += `<i class="fa-solid fa-wheat-awn" style="color: white"></i>`;
+
+        plotEl.className = 'plot';
+        if(plotsData[id].owned) plotEl.classList.add('owned');
+        if(plotsData[id].hasHouse) plotEl.classList.add('has-house');
+        if(plotsData[id].hasCow) plotEl.classList.add('has-cow');
+        if(plotsData[id].cropStatus !== 'none') plotEl.classList.add('has-crop');
+        if(plotsData[id].cropStatus === 'ready') plotEl.classList.add('crop-ready');
+
+        let label = 'Lote ' + id;
+        if(plotsData[id].cropStatus === 'ready') label = 'COLHER!';
+        else if(plotsData[id].cropStatus === 'growing') label = 'CRESCENDO';
+        else if(plotsData[id].hasHouse && plotsData[id].hasCow) label = 'FAZENDA';
+        else if(plotsData[id].hasHouse) label = 'CASA';
+        else if(plotsData[id].hasCow) label = 'GADO';
+        else if(plotsData[id].owned) label = 'SEU';
+
+        plotEl.innerHTML = icons + `<span>${label}</span>`;
+    }
+</script>
+</body>
+</html>
